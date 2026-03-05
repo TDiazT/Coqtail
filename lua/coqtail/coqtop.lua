@@ -189,30 +189,20 @@ end
 --- Find the Rocq executable and initialize the XML interface.
 -- Returns: version_info table on success, or error string on failure.
 function Coqtop:find_rocq(coq_path, coq_prog)
+  -- pcall correctly captures multiple return values from the wrapped function.
   local ok, iface, info = pcall(function()
     return xi.XMLInterface(coq_path, coq_prog)
   end)
 
-  if not ok then
+  if not ok or not iface then
     self.xml = nil
-    -- pcall puts the error in iface when it fails
-    return tostring(iface)
+    -- On failure pcall stores the error message in 'iface'.
+    return tostring(iface or "XMLInterface failed")
   end
 
-  -- pcall returns true + the return values; but pcall only packs them into
-  -- one extra value when using the simple form.  Use a wrapper to get both.
-  local iface2, info2
-  ok = pcall(function()
-    iface2, info2 = xi.XMLInterface(coq_path, coq_prog)
-  end)
-
-  if not ok or not iface2 then
-    self.xml = nil
-    return tostring(info2 or "XMLInterface failed")
-  end
-
-  self.xml = iface2
-  return info2
+  self.xml        = iface
+  self.version_str = info and info.str_version or ""
+  return info
 end
 
 -- ============================================================
@@ -541,9 +531,9 @@ function Coqtop:rewind(steps, opts, cb)
     local actual_steps = steps
 
     if actual_steps > #self.states then
+      actual_steps  = #self.states  -- save before clearing
       self.state_id = self.root_state
       self.states   = {}
-      actual_steps  = #self.states  -- = 0
     else
       -- In 8.4, queries are recorded with state_id = -1.
       -- Count them within the rewound slice to avoid over-rewinding Rocq.

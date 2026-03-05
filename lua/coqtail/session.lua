@@ -940,9 +940,25 @@ end
 
 --- Start a new Rocq instance.  cb(err_or_nil, stderr_string)
 function Session:start(coqproject_args, opts, cb)
+  -- Must call find_rocq first to initialize the XML interface.
+  local coq_path = opts.coq_path or ""
+  local coq_prog = opts.coq_prog or ""
+  local info_or_err = self.coqtop:find_rocq(coq_path, coq_prog)
+  if type(info_or_err) == "string" then
+    -- find_rocq returns a string on error
+    cb(false, info_or_err, "")
+    return
+  end
+  -- info_or_err is the version info table
+  local info = info_or_err
+
   self.coqtop:start(opts.filename, coqproject_args, opts, function(err, stderr)
     self:print_stderr(stderr)
-    cb(err, stderr or "")
+    if err then
+      cb(false, err, stderr or "")
+    else
+      cb(true, nil, stderr or "")
+    end
   end)
 end
 

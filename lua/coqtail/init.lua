@@ -287,11 +287,11 @@ function M.start(after_start_func, coq_args)
 
   local opts = make_opts(buf)
 
-  -- Find Rocq binary.
-  local coq_path = util.getvar({ vim.b, vim.g }, "coqtail_coq_path", vim.env.COQBIN or "")
-  local coq_prog = util.getvar({ vim.b, vim.g }, "coqtail_coq_prog", "")
+  -- Find Rocq binary; pass through to session.start → coqtop.find_rocq.
+  opts.coq_path = vim.fn.expand(
+    util.getvar({ vim.b, vim.g }, "coqtail_coq_path", vim.env.COQBIN or ""))
+  opts.coq_prog = util.getvar({ vim.b, vim.g }, "coqtail_coq_prog", "")
 
-  -- We need to find the Rocq version first; coqtop.lua does that during start.
   -- Locate project files.
   local proj_files, proj_args = coqproj.locate()
   vim.b[buf].coqtail_project_files = proj_files
@@ -317,7 +317,7 @@ function M.start(after_start_func, coq_args)
   end
   vim.b[buf].coqtail_use_dune = use_dune
 
-  local args_to_pass = use_dune and vim.list_slice(coq_args or {}, 1)
+  local args_to_pass = use_dune and vim.deepcopy(coq_args or {})
                                  or vim.list_extend(vim.deepcopy(proj_args), coq_args or {})
   -- Expand each argument.
   for i, a in ipairs(args_to_pass) do
