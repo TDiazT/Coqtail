@@ -1,5 +1,6 @@
 " Author: Wolf Honore
 " Coqtail Python interface and window management.
+if has('nvim') | finish | endif
 
 " Only source once.
 if exists('g:loaded_coqtail')

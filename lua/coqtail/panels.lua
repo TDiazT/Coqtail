@@ -129,9 +129,6 @@ local function updatehl(winid, buf, highlights)
       -- vim regex pattern → matchadd
       local ids = {}
       vim.api.nvim_win_call(winid, function()
-        local id = pcall(vim.fn.matchadd, grp, pat, -10)
-        if id then ids[#ids + 1] = id end
-        -- pcall returns true + value; use fn directly for simplicity
         local ok, mid = pcall(vim.fn.matchadd, grp, pat, -10)
         if ok then ids = { mid } end
       end)
@@ -281,7 +278,6 @@ local function open_single(panel, force)
       end
       if split_cmd then
         vim.cmd(split_cmd .. " sbuffer " .. pbuf)
-        vim.fn.clearjumps()
         vim.api.nvim_buf_set_var(pbuf, "coqtail_panel_open", true)
         opened = pbuf
         break

@@ -1,4 +1,6 @@
 " Only source once.
+if has('nvim') | finish | endif
+
 if exists('b:did_ftplugin')
   finish
 endif

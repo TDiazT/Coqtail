@@ -113,13 +113,12 @@ function Coqtop:_on_stderr(err, data)
 
   self._stderr_buf = self._stderr_buf .. data
 
-  if self.add_info_cb then
-    local trimmed = data:match("^%s*(.-)%s*$")
-    if trimmed ~= "" then
-      vim.schedule(function()
-        if self.add_info_cb then self.add_info_cb(trimmed) end
-      end)
-    end
+  local trimmed = data:match("^%s*(.-)%s*$")
+  if trimmed ~= "" then
+    vim.schedule(function()
+      vim.notify("[coqtail stderr] " .. trimmed, vim.log.levels.WARN)
+      if self.add_info_cb then self.add_info_cb(trimmed) end
+    end)
   end
 end
 

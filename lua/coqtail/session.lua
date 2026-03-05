@@ -2,7 +2,7 @@
 -- Per-buffer Rocq session management.
 -- Corresponds to python/coqtail.py (Coqtail class and helpers).
 
-local Coqtop = require("coqtail.coqtop")
+local Coqtop = require("coqtail.coqtop").Coqtop
 
 local M = {}
 
@@ -964,6 +964,10 @@ end
 
 function Session:stop()
   self.coqtop:stop()
+end
+
+function Session:interrupt()
+  self.coqtop:interrupt()
 end
 
 --- Advance by `steps` sentences.  cb(err_or_nil)

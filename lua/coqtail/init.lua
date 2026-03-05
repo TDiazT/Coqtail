@@ -345,10 +345,17 @@ function M.start(after_start_func, coq_args)
       sess:splash(sess.coqtop.version_str or "", h, w, opts)
     end
 
-    M.refresh()
     init_proof_diffs(sess.coqtop.version_str or "")
 
-    if after_start_func then after_start_func() end
+    -- Only refresh goals when we won't immediately step/advance.
+    -- after_start_func (e.g. RocqNext on cold start) sends its own coqidetop
+    -- requests; running M.refresh() concurrently would corrupt the pending-
+    -- coroutine slot and lose both responses.
+    if after_start_func then
+      after_start_func()
+    else
+      M.refresh()
+    end
 
     -- Set up autocmds for this buffer.
     local ag = vim.api.nvim_create_augroup("CoqtailSync_" .. buf, { clear = true })

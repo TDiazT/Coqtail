@@ -145,7 +145,9 @@ function M.getvar(scopes, var, default)
   if v ~= nil then
     return v
   end
-  return M.getvar({ table.unpack(scopes, 2) }, var, default)
+  local rest = {}
+  for i = 2, #scopes do rest[#rest + 1] = scopes[i] end
+  return M.getvar(rest, var, default)
 end
 
 --- Create a tagstack item for the current cursor position.

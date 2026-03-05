@@ -8,6 +8,9 @@
 
 local xml = require("coqtail.xml")
 
+-- Lua 5.1 / LuaJIT compat: table.unpack may not exist.
+local unpack = table.unpack or unpack  -- luacheck: ignore 143
+
 local M = {}
 
 -- ============================================================
@@ -158,7 +161,7 @@ local function _parse_tagged_tokens_inner(tags_set, node, stack, inner)
 
   -- Text before first child
   if node.text ~= "" then
-    result[#result + 1] = { node.text, { table.unpack(stack) } }
+    result[#result + 1] = { node.text, { unpack(stack) } }
   end
 
   -- Recurse into children
@@ -180,7 +183,7 @@ local function _parse_tagged_tokens_inner(tags_set, node, stack, inner)
 
   -- Tail text (text after this element's closing tag)
   if inner and node.tail ~= "" then
-    result[#result + 1] = { node.tail, { table.unpack(stack) } }
+    result[#result + 1] = { node.tail, { unpack(stack) } }
   end
 
   return result
@@ -564,6 +567,7 @@ end
 
 function XMLInterfaceBase:is_query(cmd)
   local first = cmd:match("^(%S+)%.?$") or cmd:match("^%S+")
+  if not first then return false end
   first = first:gsub("%.$", "")
   for _, q in ipairs(self.queries) do
     if first == q then return true end
@@ -1531,11 +1535,12 @@ end
 -- coq_prog: binary name hint (or nil to try "rocq" and "coqc")
 function M.find_rocq(coq_path, coq_prog)
   local candidates
-  if coq_prog then
+  if coq_prog and coq_prog ~= "" then
     candidates = { coq_prog }
   else
     candidates = { "rocq", "coqc" }
   end
+  if coq_path == "" then coq_path = nil end
 
   for _, prog in ipairs(candidates) do
     local found
@@ -1573,11 +1578,15 @@ end
 -- version_info_table: { version={M,m,p}, str_version=string, latest=string_or_nil }
 function M.XMLInterface(coq_path, coq_prog)
   local rocq = M.find_rocq(coq_path, coq_prog)
-  local rocq_dir = rocq:match("^(.*)/[^/]+$") or "."
+  local rocq_dir  = rocq:match("^(.*)/[^/]+$") or "."
+  -- Only pass coq_prog to make_interface when the user explicitly set it.
+  -- When nil, version-specific constructors (e.g. make_v89) will substitute
+  -- the correct IDE binary name (e.g. "coqidetop").
+  local user_prog = (coq_prog and coq_prog ~= "") and coq_prog or nil
   local str_ver  = M.extract_version(rocq)
   local version  = M.parse_version(str_ver)
 
-  local iface, latest = M.make_interface(version, str_ver, rocq_dir, coq_prog)
+  local iface, latest = M.make_interface(version, str_ver, rocq_dir, user_prog)
   local info = {
     version     = version,
     str_version = str_ver,
