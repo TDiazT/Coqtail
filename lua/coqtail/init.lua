@@ -342,7 +342,7 @@ function M.start(after_start_func, coq_args)
     if info_winid ~= -1 then
       local w = vim.api.nvim_win_get_width(info_winid)
       local h = vim.api.nvim_win_get_height(info_winid)
-      sess:splash(sess.coqtop.version_str or "", h, w, opts)
+      sess:splash(sess.coqtop.version_str or "", w, h, opts)
     end
 
     init_proof_diffs(sess.coqtop.version_str or "")

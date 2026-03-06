@@ -714,8 +714,8 @@ function Session:_set_goal(msg, clear)
     self.goal_msg = msg[1]
     self.goal_hls = msg[2]
   end
-  if clear or table.concat(self.goal_msg or {}) == "" then
-    self.goal_msg = { "No goals." }
+  if clear then
+    self.goal_msg = {}
     self.goal_hls = {}
   end
 end
@@ -1330,8 +1330,8 @@ function Session:splash(version, width, _height, opts)
     out[#out + 1] = (" "):rep(hpad) .. l:gsub("%s+$", "")
   end
 
-  self:_set_info(out, false)
-  self:_do_refresh(false, true, false)
+  self:_set_goal({ out, {} })
+  self:_do_refresh(true, true, false)
   _ = opts  -- suppress unused warning
 end
 

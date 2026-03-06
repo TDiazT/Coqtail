@@ -103,7 +103,12 @@ function Coqtop:_on_stdout(err, data)
     pending.timer:close()
   end
 
-  coroutine.resume(pending.co, result, err_str)
+  -- Schedule the resume so that Vim API calls (matchadd, nvim_buf_set_lines,
+  -- etc.) are allowed in the resumed coroutine context.
+  local co_ref    = pending.co
+  local result_ref = result
+  local err_ref   = err_str
+  vim.schedule(function() coroutine.resume(co_ref, result_ref, err_ref) end)
 end
 
 -- Called whenever data arrives on stderr.
@@ -128,8 +133,12 @@ end
 function Coqtop:_call(cmd_xml, timeout)
   assert(coroutine.running(), "_call must be called from within a coroutine")
 
-  -- Discard any stale buffered data (equivalent to Python's empty_out())
-  self._stdout_buf = ""
+  -- Preserve any stale buffered data so async feedback arriving between commands
+  -- (e.g. "Def is defined.") is included in the next response parse.
+  -- Exception: if the stale data already contains </value> it is from a stray
+  -- response and must be discarded to avoid mis-parsing the upcoming response.
+  if xi.worth_parsing(self._stdout_buf) then self._stdout_buf = "" end
+  -- Only clear stderr to avoid stale error attribution.
   self._stderr_buf = ""
 
   local co      = coroutine.running()
@@ -147,7 +156,7 @@ function Coqtop:_call(cmd_xml, timeout)
       timer:stop()
       timer:close()
       self:interrupt()
-      coroutine.resume(co, xi.TIMEOUT_ERR, "")
+      vim.schedule(function() coroutine.resume(co, xi.TIMEOUT_ERR, "") end)
     end)
   end
 
@@ -160,7 +169,8 @@ function Coqtop:_call(cmd_xml, timeout)
         pending.timer:stop()
         pending.timer:close()
       end
-      coroutine.resume(co, xi.Err.new("Write error: " .. tostring(write_err)), "")
+      local err_obj = xi.Err.new("Write error: " .. tostring(write_err))
+      vim.schedule(function() coroutine.resume(co, err_obj, "") end)
     end
     -- On success the response arrives via _on_stdout
   end)
