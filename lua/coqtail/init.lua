@@ -380,6 +380,32 @@ function M.start(after_start_func, coq_args)
   return true
 end
 
+--- Print the Rocq executable currently in use (or configured) for this buffer.
+function M.get_exe()
+  local buf = vim.api.nvim_get_current_buf()
+  local sess = get_session(buf)
+
+  if sess and sess.started and sess.coqtop and sess.coqtop.xml then
+    local xml = sess.coqtop.xml
+    local bin = xml.coq_bin
+      or (xml.coq_path ~= "" and (xml.coq_path .. "/" .. xml.coq_prog) or xml.coq_prog)
+    local ver = sess.coqtop.version_str or ""
+    vim.notify(("Rocq executable: %s (%s)"):format(bin, ver))
+  else
+    local path = vim.fn.expand(
+      util.getvar({ vim.b, vim.g }, "coqtail_coq_path", vim.env.COQBIN or ""))
+    local prog = util.getvar({ vim.b, vim.g }, "coqtail_coq_prog", "")
+    if path == "" and prog == "" then
+      vim.notify("Rocq executable: (auto-detect from $PATH, Rocq not running)")
+    elseif prog == "" then
+      vim.notify(("Rocq search path: %s (program auto-detected, Rocq not running)"):format(path))
+    else
+      local bin = path ~= "" and (path .. "/" .. prog) or prog
+      vim.notify(("Rocq executable: %s (Rocq not running)"):format(bin))
+    end
+  end
+end
+
 --- Set the Rocq executable for the current buffer and restart if running.
 -- path may be a full path to an executable or a directory.
 function M.set_exe(path)
@@ -556,6 +582,11 @@ function M.define_commands()
   cmd("CoqGotoGoalPrev", "RocqGotoGoalPrev", { bang = true, bar = true }, function(a)
     if not is_running(buf) then return end
     M.gotogoal(-2, not a.bang)
+  end)
+
+  -- RocqGetExe / CoqGetExe
+  cmd("CoqGetExe", "RocqGetExe", { bar = true }, function(_)
+    M.get_exe()
   end)
 
   -- RocqSetExe / CoqSetExe

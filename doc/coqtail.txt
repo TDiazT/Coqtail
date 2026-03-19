@@ -40,6 +40,15 @@ Starting and Stopping Coqtail				    *coqtail-start-stop*
 :CoqInterrupt
 CTRL-C			Send SIGINT to Rocq and clear any pending commands.
 
+					       *:RocqGetExe* *:CoqGetExe*
+							     *coqtail-get-exe*
+:RocqGetExe
+:CoqGetExe		Print the Rocq executable in use for the current buffer.
+			If Rocq is running, shows the resolved binary path and
+			version. If not running, shows the configured values of
+			|b:coqtail_coq_path| and |b:coqtail_coq_prog| (falling
+			back to |g:| variables and $COQBIN).
+
 					       *:RocqSetExe* *:CoqSetExe*
 							     *coqtail-set-exe*
 :RocqSetExe {path}

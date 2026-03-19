@@ -531,6 +531,8 @@ function XMLInterfaceBase:launch(filename, extra_args)
     )
   end
 
+  self.coq_bin = coq_bin
+
   local args = { coq_bin }
   for _, a in ipairs(self.launch_args) do
     args[#args + 1] = a
