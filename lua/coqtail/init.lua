@@ -380,6 +380,27 @@ function M.start(after_start_func, coq_args)
   return true
 end
 
+--- Set the Rocq executable for the current buffer and restart if running.
+-- path may be a full path to an executable or a directory.
+function M.set_exe(path)
+  local buf = vim.api.nvim_get_current_buf()
+  local expanded = vim.fn.expand(path)
+  if vim.fn.isdirectory(expanded) == 1 then
+    vim.b[buf].coqtail_coq_path = expanded
+    vim.b[buf].coqtail_coq_prog = ""
+    vim.notify("Rocq search path set to: " .. expanded)
+  else
+    vim.b[buf].coqtail_coq_path = vim.fn.fnamemodify(expanded, ":h")
+    vim.b[buf].coqtail_coq_prog = vim.fn.fnamemodify(expanded, ":t")
+    vim.notify("Rocq executable set to: " .. expanded)
+  end
+
+  if is_running(buf) then
+    M.stop()
+    vim.schedule(function() M.start(nil, {}) end)
+  end
+end
+
 --- Stop Rocq and clean up.
 function M.stop()
   local buf = panels.getmain()
@@ -535,6 +556,11 @@ function M.define_commands()
   cmd("CoqGotoGoalPrev", "RocqGotoGoalPrev", { bang = true, bar = true }, function(a)
     if not is_running(buf) then return end
     M.gotogoal(-2, not a.bang)
+  end)
+
+  -- RocqSetExe / CoqSetExe
+  cmd("CoqSetExe", "RocqSetExe", { nargs = 1, complete = "file" }, function(a)
+    M.set_exe(a.args)
   end)
 
   -- RocqToggleDebug / CoqToggleDebug

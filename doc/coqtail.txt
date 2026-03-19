@@ -40,6 +40,20 @@ Starting and Stopping Coqtail				    *coqtail-start-stop*
 :CoqInterrupt
 CTRL-C			Send SIGINT to Rocq and clear any pending commands.
 
+					       *:RocqSetExe* *:CoqSetExe*
+							     *coqtail-set-exe*
+:RocqSetExe {path}
+:CoqSetExe {path}	Set the Rocq executable for the current buffer. {path}
+			may be:
+			- A full path to an executable: sets both
+			  |b:coqtail_coq_path| and |b:coqtail_coq_prog|.
+			- A directory: sets |b:coqtail_coq_path| and clears
+			  |b:coqtail_coq_prog| so the executable is
+			  auto-detected.
+			If Rocq is already running, it is restarted with the
+			new executable. Useful when working with a custom
+			build.
+
 =================
 Movement Commands					      *coqtail-movement*
 
