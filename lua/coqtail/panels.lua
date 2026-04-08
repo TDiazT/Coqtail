@@ -278,6 +278,8 @@ local function open_single(panel, force)
       end
       if split_cmd then
         vim.cmd(split_cmd .. " sbuffer " .. pbuf)
+        vim.wo.number = false
+        vim.wo.relativenumber = false
         vim.api.nvim_buf_set_var(pbuf, "coqtail_panel_open", true)
         opened = pbuf
         break

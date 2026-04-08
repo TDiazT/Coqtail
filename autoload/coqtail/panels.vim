@@ -60,6 +60,8 @@ function! s:init(name) abort
   setlocal bufhidden=hide
   setlocal nobuflisted
   setlocal nocursorline
+  setlocal nonumber
+  setlocal norelativenumber
   setlocal wrap
   setlocal undolevels=50
 
