@@ -85,29 +85,78 @@ local function strip_comments(msg)
   local pos = 1  -- 1-indexed current position in msg
 
   while pos <= #msg do
-    local start = msg:find("(*", pos, true)
-    local fin   = msg:find("*)", pos, true)
+    if nesting == 0 then
+      local str_p = msg:find('"',  pos, true)
+      local cs    = msg:find("(*", pos, true)
+      local ce    = msg:find("*)", pos, true)
 
-    if start == nil and (fin == nil or nesting == 0) then
-      nocom[#nocom + 1] = msg:sub(pos)
-      break
-    elseif start ~= nil and (fin == nil or start < fin) then
-      if nesting == 0 then
-        nocom[#nocom + 1] = msg:sub(pos, start - 1)
-        nocom[#nocom + 1] = "  "            -- replace '(*' with two spaces
-        com_pos[#com_pos + 1] = { start - 1, 0 }
-      else
-        nocom[#nocom + 1] = blank_nonws(msg:sub(pos, start + 1))
+      if str_p == nil and cs == nil then
+        -- Nothing interesting left
+        nocom[#nocom + 1] = msg:sub(pos)
+        break
       end
-      pos     = start + 2
-      nesting = nesting + 1
+
+      if str_p ~= nil and (cs == nil or str_p < cs) then
+        -- String literal opens before any comment: copy it verbatim,
+        -- respecting the Rocq "" escape sequence (two quotes = one literal ").
+        nocom[#nocom + 1] = msg:sub(pos, str_p)
+        pos = str_p + 1
+        while pos <= #msg do
+          local q = msg:find('"', pos, true)
+          if q == nil then
+            -- Unterminated string: copy the rest and stop
+            nocom[#nocom + 1] = msg:sub(pos)
+            pos = #msg + 1
+            break
+          elseif msg:sub(q + 1, q + 1) == '"' then   -- "" escape
+            nocom[#nocom + 1] = msg:sub(pos, q + 1)
+            pos = q + 2
+          else                                          -- closing quote
+            nocom[#nocom + 1] = msg:sub(pos, q)
+            pos = q + 1
+            break
+          end
+        end
+        -- continue outer while
+
+      elseif cs ~= nil and (ce == nil or cs < ce) then
+        -- Outermost comment opens first
+        nocom[#nocom + 1] = msg:sub(pos, cs - 1)
+        nocom[#nocom + 1] = "  "            -- replace '(*' with two spaces
+        com_pos[#com_pos + 1] = { cs - 1, 0 }
+        pos     = cs + 2
+        nesting = 1
+
+      else
+        -- Stray *) at nesting 0: preserve as-is (matches existing behaviour)
+        nocom[#nocom + 1] = msg:sub(pos)
+        break
+      end
+
     else
-      -- fin < start or start == nil: found a comment end
-      nocom[#nocom + 1] = blank_nonws(msg:sub(pos, fin + 1))
-      pos     = fin + 2
-      nesting = nesting - 1
-      if nesting == 0 then
-        com_pos[#com_pos][2] = (pos - 1) - com_pos[#com_pos][1]
+      -- Inside a comment: strings are not significant
+      local cs = msg:find("(*", pos, true)
+      local ce = msg:find("*)", pos, true)
+
+      if ce == nil then
+        -- Unterminated comment: blank the rest
+        nocom[#nocom + 1] = blank_nonws(msg:sub(pos))
+        break
+      end
+
+      if cs ~= nil and cs < ce then
+        -- Nested comment start
+        nocom[#nocom + 1] = blank_nonws(msg:sub(pos, cs + 1))
+        pos     = cs + 2
+        nesting = nesting + 1
+      else
+        -- Comment end
+        nocom[#nocom + 1] = blank_nonws(msg:sub(pos, ce + 1))
+        pos     = ce + 2
+        nesting = nesting - 1
+        if nesting == 0 then
+          com_pos[#com_pos][2] = (pos - 1) - com_pos[#com_pos][1]
+        end
       end
     end
   end
@@ -300,10 +349,10 @@ local function find_dot_after(lines, sline, scol)
     local str_p  = rest:find('"',    1, true)
     local elpi_p = rest:find("lp:{{", 1, true)
 
-    local first = nil
-    for _, p in ipairs({ dot_p, com_p, str_p, elpi_p }) do
-      if p ~= nil and (first == nil or p < first) then first = p end
-    end
+    local first = dot_p
+    if com_p  ~= nil and (first == nil or com_p  < first) then first = com_p  end
+    if str_p  ~= nil and (first == nil or str_p  < first) then first = str_p  end
+    if elpi_p ~= nil and (first == nil or elpi_p < first) then first = elpi_p end
 
     if first == nil then
       -- Nothing interesting: advance to next line
@@ -1369,5 +1418,17 @@ end
 M.Session              = Session
 M.get_searches         = get_searches
 M.lines_and_highlights = lines_and_highlights
+
+-- Expose internals for unit testing only
+if _G._COQTAIL_TESTING then
+  M._test = {
+    strip_comments     = strip_comments,
+    find_dot_after     = find_dot_after,
+    find_next_sentence = find_next_sentence,
+    get_message_range  = get_message_range,
+    NoDotError         = NoDotError,
+    UnmatchedError     = UnmatchedError,
+  }
+end
 
 return M
