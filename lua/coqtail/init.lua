@@ -202,7 +202,8 @@ end
 function M.jumpto(target)
   local panel = panels.switch(panels.MAIN)
   if panel == panels.NONE then return end
-  local buf  = panels.getmain()
+  local buf = panels.getmain()
+  if require("coqtail.lsp").is_running(buf) then return end
   local sess = get_session(buf)
   if not sess then return end
   local pos
@@ -219,7 +220,11 @@ end
 
 --- Advance/rewind to the given line/col (0 = use cursor).
 function M.toline(line, admit)
-  local buf  = panels.getmain()
+  local buf = panels.getmain()
+  if require("coqtail.lsp").is_running(buf) then
+    util.warn("Not available in LSP mode")
+    return
+  end
   local sess = get_session(buf)
   if not sess then return end
   local l = line == 0 and vim.fn.line(".") or line
@@ -229,7 +234,9 @@ end
 
 --- Refresh goal/info panels.
 function M.refresh()
-  local buf  = panels.getmain()
+  local buf = panels.getmain()
+  local lsp = require("coqtail.lsp")
+  if lsp.is_running(buf) then lsp.refresh(buf); return end
   local sess = get_session(buf)
   if not sess then return end
   sess:refresh(make_opts(buf), true, false, true, function() end)
@@ -243,7 +250,8 @@ end
 
 --- Interrupt the current Rocq command.
 function M.interrupt()
-  local buf  = panels.getmain()
+  local buf = panels.getmain()
+  if require("coqtail.lsp").is_running(buf) then return end
   local sess = get_session(buf)
   if sess then sess:interrupt() end
 end
@@ -269,10 +277,19 @@ end
 -- @param coq_args          extra CLI arguments
 function M.start(after_start_func, coq_args)
   local buf = vim.api.nvim_get_current_buf()
+  local lsp = require("coqtail.lsp")
 
-  if is_running(buf) then
+  if is_running(buf) or lsp.is_running(buf) then
     util.warn("Rocq is already running.")
     return false
+  end
+
+  -- LSP mode: if a supported LSP client is attached, skip the XML backend.
+  if lsp.is_active(buf) then
+    panels.init()
+    panels.open(false)
+    lsp.start(buf, after_start_func)
+    return true
   end
 
   -- Create a session if there isn't one.
@@ -430,11 +447,24 @@ end
 --- Stop Rocq and clean up.
 function M.stop()
   local buf = panels.getmain()
-  local sess = get_session(buf)
 
   -- Guard against double-stop.
   if vim.b[buf] and vim.b[buf].coqtail_stopping then return end
   if vim.b[buf] then vim.b[buf].coqtail_stopping = true end
+
+  -- LSP mode cleanup.
+  local lsp = require("coqtail.lsp")
+  if lsp.is_running(buf) then
+    -- CoqtailQuit_ is intentionally kept so the LspAttach autocmd
+    -- inside it can auto-restart if the LSP client re-attaches.
+    lsp.stop(buf)
+    if vim.b[buf] then
+      vim.b[buf].coqtail_stopping = false
+    end
+    return
+  end
+
+  local sess = get_session(buf)
 
   M.interrupt()
   panels.switch(panels.MAIN)
@@ -473,6 +503,7 @@ end
 --- Define buffer-local commands (Coq* and Rocq* aliases).
 function M.define_commands()
   local buf = vim.api.nvim_get_current_buf()
+  local lsp = require("coqtail.lsp")
 
   local function cmd(name, rocq_name, opts, fn)
     vim.api.nvim_buf_create_user_command(buf, name,      fn, opts)
@@ -495,6 +526,11 @@ function M.define_commands()
 
   -- RocqNext / CoqNext
   cmd("CoqNext", "RocqNext", { count = 1, bar = true }, function(a)
+    if lsp.is_active(buf) then
+      if not lsp.is_running(buf) then M.start(nil, {}) end
+      util.warn("Not available in LSP mode")
+      return
+    end
     if not is_running(buf) then M.start(function()
       local sess = get_session(buf)
       if sess then sess:step(a.count, make_opts(buf), function() end) end
@@ -505,6 +541,7 @@ function M.define_commands()
 
   -- RocqUndo / CoqUndo
   cmd("CoqUndo", "RocqUndo", { count = 1, bar = true }, function(a)
+    if lsp.is_active(buf) then util.warn("Not available in LSP mode"); return end
     if not is_running(buf) then return end
     local sess = get_session(buf)
     if sess then sess:rewind(a.count, make_opts(buf), function() end) end
@@ -512,18 +549,29 @@ function M.define_commands()
 
   -- RocqToLine / CoqToLine
   cmd("CoqToLine", "RocqToLine", { count = 0, bar = true }, function(a)
+    if lsp.is_active(buf) then
+      if not lsp.is_running(buf) then M.start(nil, {}) end
+      util.warn("Not available in LSP mode")
+      return
+    end
     if not is_running(buf) then M.start(function() M.toline(a.count, false) end, {}) return end
     M.toline(a.count, false)
   end)
 
   -- RocqOmitToLine / CoqOmitToLine
   cmd("CoqOmitToLine", "RocqOmitToLine", { count = 0, bar = true }, function(a)
+    if lsp.is_active(buf) then
+      if not lsp.is_running(buf) then M.start(nil, {}) end
+      util.warn("Not available in LSP mode")
+      return
+    end
     if not is_running(buf) then M.start(function() M.toline(a.count, true) end, {}) return end
     M.toline(a.count, true)
   end)
 
   -- RocqToTop / CoqToTop
   cmd("CoqToTop", "RocqToTop", { bar = true }, function(_)
+    if lsp.is_active(buf) then util.warn("Not available in LSP mode"); return end
     if not is_running(buf) then return end
     local sess = get_session(buf)
     if sess then sess:to_top(make_opts(buf), function() end) end
@@ -531,18 +579,21 @@ function M.define_commands()
 
   -- RocqJumpToEnd / CoqJumpToEnd
   cmd("CoqJumpToEnd", "RocqJumpToEnd", { bar = true }, function(_)
+    if lsp.is_active(buf) then util.warn("Not available in LSP mode"); return end
     if not is_running(buf) then M.start(function() M.jumpto("endpoint") end, {}) return end
     M.jumpto("endpoint")
   end)
 
   -- RocqJumpToError / CoqJumpToError
   cmd("CoqJumpToError", "RocqJumpToError", { bar = true }, function(_)
+    if lsp.is_active(buf) then util.warn("Not available in LSP mode"); return end
     if not is_running(buf) then return end
     M.jumpto("errorpoint")
   end)
 
   -- RocqGotoDef / CoqGotoDef
   cmd("CoqGotoDef", "RocqGotoDef", { nargs = 1, bang = true }, function(a)
+    if lsp.is_active(buf) then util.warn("Not available in LSP mode"); return end
     if not is_running(buf) then M.start(function() M.gotodef(a.args, a.bang) end, {}) return end
     M.gotodef(a.args, a.bang)
   end)
@@ -552,6 +603,7 @@ function M.define_commands()
     nargs = "+",
     complete = function(arg, cmd, cursor) return query_complete(arg, cmd, cursor) end,
   }, function(a)
+    if lsp.is_active(buf) then util.warn("Not available in LSP mode"); return end
     if not is_running(buf) then M.start(function()
       local sess = get_session(buf)
       if sess then sess:query(a.fargs, make_opts(buf), false, function() end) end
@@ -803,6 +855,8 @@ function M.register()
   M.define_commands()
   M.define_mappings()
 
+  local lsp = require("coqtail.lsp")
+
   -- Quit autocmd: stop Rocq when the last window showing this buffer closes.
   local ag = vim.api.nvim_create_augroup("CoqtailQuit_" .. buf, { clear = true })
   vim.api.nvim_create_autocmd("QuitPre", {
@@ -813,6 +867,26 @@ function M.register()
       end
     end,
   })
+
+  -- Auto-start LSP mode when a supported Rocq LSP client attaches.
+  vim.api.nvim_create_autocmd("LspAttach", {
+    group = ag, buffer = buf,
+    callback = function()
+      if not lsp.is_running(buf) and lsp.is_active(buf) then
+        vim.api.nvim_buf_call(buf, function() M.start(nil, {}) end)
+      end
+    end,
+  })
+
+  -- If a supported LSP client is already attached at registration time, start
+  -- after a yield so the window layout is ready.
+  vim.schedule(function()
+    if vim.api.nvim_buf_is_valid(buf)
+        and not lsp.is_running(buf)
+        and lsp.is_active(buf) then
+      vim.api.nvim_buf_call(buf, function() M.start(nil, {}) end)
+    end
+  end)
 
   -- Clear highlights when a window switches away from this buffer.
   vim.api.nvim_create_autocmd("BufEnter", {
