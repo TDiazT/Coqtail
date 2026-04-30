@@ -116,6 +116,8 @@ check("dot str shields comment", dot({'A "(*foo*)".'},       0, 0), {0, 11})
 check("dot multiline",         dot({"A", "B."},              0, 0), {1, 1})
 check("dot multiline comment", dot({"A (*", ". *) B."},      0, 0), {1, 6})
 check("dot multiline str",     dot({'A "', '." B.'},         0, 0), {1, 4})
+check("dot multiline comment 3 lines",
+  dot({"(** line1", "line2", "line3. *) X."}, 0, 0), {2, 11})
 check("dot dot3",              dot({"A..."},                  0, 0), {0, 3})
 
 check_error("dot no dot",      function() dot({"A"}, 0, 0) end,    "NoDotError")
