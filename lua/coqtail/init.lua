@@ -560,6 +560,40 @@ function M.define_commands()
     if sess then sess:query(a.fargs, make_opts(buf), false, function() end) end
   end)
 
+  -- RocqAbout / CoqAbout  (prompt if no arg given)
+  -- RocqPrint / CoqPrint  (prompt if no arg given)
+  local function run_query_prompt(kind, args)
+    local function do_run(term)
+      if not term or term == "" then return end
+      if not is_running(buf) then
+        M.start(function()
+          local sess = get_session(buf)
+          if sess then sess:query({kind, term}, make_opts(buf), false, function() end) end
+        end, {})
+        return
+      end
+      local sess = get_session(buf)
+      if sess then sess:query({kind, term}, make_opts(buf), false, function() end) end
+    end
+    if #args > 0 then
+      do_run(table.concat(args, " "))
+    else
+      vim.ui.input({ prompt = kind .. ": " }, do_run)
+    end
+  end
+
+  cmd("CoqAbout", "RocqAbout", { nargs = "*" }, function(a)
+    run_query_prompt("About", a.fargs)
+  end)
+
+  cmd("CoqPrint", "RocqPrint", { nargs = "*" }, function(a)
+    run_query_prompt("Print", a.fargs)
+  end)
+
+  cmd("CoqCheck", "RocqCheck", { nargs = "*" }, function(a)
+    run_query_prompt("Check", a.fargs)
+  end)
+
   -- RocqRestorePanels / CoqRestorePanels
   cmd("CoqRestorePanels", "RocqRestorePanels", { bar = true }, function(_)
     if not is_running(buf) then M.start(function() M.open_and_refresh(true) end, {}) return end
@@ -656,6 +690,9 @@ function M.define_mappings()
     "<ESC>:Rocq Print <C-r>=v:lua.require('coqtail').getvisual()<CR><CR>")
   bmap("x", "<Plug>CoqLocate",
     "<ESC>:Rocq Locate <C-r>=v:lua.require('coqtail').getvisual()<CR><CR>")
+  bmap("n", "<Plug>CoqAboutAsk",      ":RocqAbout<CR>")
+  bmap("n", "<Plug>CoqPrintAsk",      ":RocqPrint<CR>")
+  bmap("n", "<Plug>CoqCheckAsk",      ":RocqCheck<CR>")
   bmap("n", "<Plug>CoqRestorePanels",    ":RocqRestorePanels<CR>")
   bmap("n", "<Plug>CoqGotoGoalStart",    ":<C-U>execute v:count1 'CoqGotoGoal'<CR>")
   bmap("n", "<Plug>CoqGotoGoalEnd",      ":<C-U>execute v:count1 'CoqGotoGoal!'<CR>")
@@ -682,6 +719,9 @@ function M.define_mappings()
     { "nx", "Check"            },
     { "nx", "About"            },
     { "nx", "Print"            },
+    { "n",  "AboutAsk"         },
+    { "n",  "PrintAsk"         },
+    { "n",  "CheckAsk"         },
     { "nx", "Locate"           },
     { "ni", "RestorePanels"    },
     { "n",  "GotoGoalStart"    },
@@ -722,6 +762,9 @@ function M.define_mappings()
     { "Check",             "h",      "nx" },
     { "About",             "a",      "nx" },
     { "Print",             "p",      "nx" },
+    { "AboutAsk",          "A",      "n"  },
+    { "PrintAsk",          "P",      "n"  },
+    { "CheckAsk",          "H",      "n"  },
     { "Locate",            "f",      "nx" },
     { "RestorePanels",     "r",      "ni" },
     { "GotoGoalStart",     "gg",     "ni" },
