@@ -594,6 +594,10 @@ function M.define_commands()
     run_query_prompt("Check", a.fargs)
   end)
 
+  cmd("CoqSearch", "RocqSearch", { nargs = "*" }, function(a)
+    run_query_prompt("Search", a.fargs)
+  end)
+
   -- RocqRestorePanels / CoqRestorePanels
   cmd("CoqRestorePanels", "RocqRestorePanels", { bar = true }, function(_)
     if not is_running(buf) then M.start(function() M.open_and_refresh(true) end, {}) return end
@@ -693,6 +697,7 @@ function M.define_mappings()
   bmap("n", "<Plug>CoqAboutAsk",      ":RocqAbout<CR>")
   bmap("n", "<Plug>CoqPrintAsk",      ":RocqPrint<CR>")
   bmap("n", "<Plug>CoqCheckAsk",      ":RocqCheck<CR>")
+  bmap("n", "<Plug>CoqSearchAsk",     ":RocqSearch<CR>")
   bmap("n", "<Plug>CoqRestorePanels",    ":RocqRestorePanels<CR>")
   bmap("n", "<Plug>CoqGotoGoalStart",    ":<C-U>execute v:count1 'CoqGotoGoal'<CR>")
   bmap("n", "<Plug>CoqGotoGoalEnd",      ":<C-U>execute v:count1 'CoqGotoGoal!'<CR>")
@@ -722,6 +727,7 @@ function M.define_mappings()
     { "n",  "AboutAsk"         },
     { "n",  "PrintAsk"         },
     { "n",  "CheckAsk"         },
+    { "n",  "SearchAsk"        },
     { "nx", "Locate"           },
     { "ni", "RestorePanels"    },
     { "n",  "GotoGoalStart"    },
@@ -765,6 +771,7 @@ function M.define_mappings()
     { "AboutAsk",          "A",      "n"  },
     { "PrintAsk",          "P",      "n"  },
     { "CheckAsk",          "H",      "n"  },
+    { "SearchAsk",         "S",      "n"  },
     { "Locate",            "f",      "nx" },
     { "RestorePanels",     "r",      "ni" },
     { "GotoGoalStart",     "gg",     "ni" },
