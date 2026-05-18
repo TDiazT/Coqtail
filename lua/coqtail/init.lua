@@ -427,6 +427,24 @@ function M.set_exe(path)
   end
 end
 
+--- Stop Rocq and restart, restoring the previous checked position.
+function M.restart()
+  local buf  = panels.getmain()
+  local sess = get_session(buf)
+  local ep   = sess and sess:endpoint() or nil
+  -- Only restore if something was actually checked (endpoint past the start).
+  local restore = ep and (ep[1] > 1 or ep[2] > 0)
+  M.stop()
+  vim.schedule(function()
+    M.start(restore and function()
+      local new_sess = get_session(panels.getmain())
+      if new_sess then
+        new_sess:to_line(ep[1] - 1, ep[2] - 1, false, make_opts(panels.getmain()), function() end)
+      end
+    end or nil, {})
+  end)
+end
+
 --- Stop Rocq and clean up.
 function M.stop()
   local buf = panels.getmain()
@@ -488,6 +506,10 @@ function M.define_commands()
   -- RocqStop / CoqStop
   cmd("CoqStop", "RocqStop", { bar = true },
     function(_) M.stop() end)
+
+  -- RocqRestart / CoqRestart
+  cmd("CoqRestart", "RocqRestart", { bar = true },
+    function(_) M.restart() end)
 
   -- RocqInterrupt / CoqInterrupt
   cmd("CoqInterrupt", "RocqInterrupt", { bar = true },
@@ -657,6 +679,7 @@ function M.define_mappings()
   -- <Plug> mappings
   bmap("n", "<Plug>CoqStart",            ":RocqStart<CR>")
   bmap("n", "<Plug>CoqStop",             ":RocqStop<CR>")
+  bmap("n", "<Plug>CoqRestart",          ":RocqRestart<CR>")
   bmap("n", "<Plug>CoqInterrupt",        ":RocqInterrupt<CR>")
   bmap("n", "<Plug>CoqNext",             ":<C-U>execute v:count1 'CoqNext'<CR>")
   bmap("n", "<Plug>CoqUndo",             ":<C-U>execute v:count1 'CoqUndo'<CR>")
@@ -711,6 +734,7 @@ function M.define_mappings()
   local aliases = {
     { "n",  "Start"            },
     { "n",  "Stop"             },
+    { "n",  "Restart"          },
     { "n",  "Interrupt"        },
     { "ni", "Next"             },
     { "ni", "Undo"             },
@@ -756,6 +780,7 @@ function M.define_mappings()
   local maps = {
     { "Start",             "c",      "n"  },
     { "Stop",              "q",      "n"  },
+    { "Restart",           "R",      "n"  },
     { "Interrupt",         "!\026c", "n"  },  -- <C-c> without prefix
     { "Next",              "j",      "ni" },
     { "Undo",              "k",      "ni" },
