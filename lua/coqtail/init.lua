@@ -227,6 +227,12 @@ function M.toline(line, admit)
   sess:to_line(l - 1, c - 1, admit, make_opts(buf), function() end)
 end
 
+--- Advance checking to the last line of the buffer.
+function M.toend(admit)
+  local buf = panels.getmain()
+  M.toline(vim.api.nvim_buf_line_count(buf), admit)
+end
+
 --- Refresh goal/info panels.
 function M.refresh()
   local buf  = panels.getmain()
@@ -544,6 +550,18 @@ function M.define_commands()
     M.toline(a.count, true)
   end)
 
+  -- RocqToEnd / CoqToEnd
+  cmd("CoqToEnd", "RocqToEnd", { bar = true }, function(_)
+    if not is_running(buf) then M.start(function() M.toend(false) end, {}) return end
+    M.toend(false)
+  end)
+
+  -- RocqOmitToEnd / CoqOmitToEnd
+  cmd("CoqOmitToEnd", "RocqOmitToEnd", { bar = true }, function(_)
+    if not is_running(buf) then M.start(function() M.toend(true) end, {}) return end
+    M.toend(true)
+  end)
+
   -- RocqToTop / CoqToTop
   cmd("CoqToTop", "RocqToTop", { bar = true }, function(_)
     if not is_running(buf) then return end
@@ -685,6 +703,10 @@ function M.define_mappings()
   bmap("n", "<Plug>CoqUndo",             ":<C-U>execute v:count1 'CoqUndo'<CR>")
   bmap("n", "<Plug>CoqToLine",           ":<C-U>execute v:count 'CoqToLine'<CR>")
   bmap("n", "<Plug>CoqOmitToLine",       ":<C-U>execute v:count 'CoqOmitToLine'<CR>")
+  bmap("n", "<Plug>CoqToEnd",             ":RocqToEnd<CR>")
+  bmap("n", "<Plug>CoqOmitToEnd",        ":RocqOmitToEnd<CR>")
+  bmap("i", "<Plug>CoqToEnd",             "<C-\\><C-o>:RocqToEnd<CR>")
+  bmap("i", "<Plug>CoqOmitToEnd",        "<C-\\><C-o>:RocqOmitToEnd<CR>")
   bmap("n", "<Plug>CoqToTop",            ":RocqToTop<CR>")
   bmap("n", "<Plug>CoqJumpToEnd",        ":RocqJumpToEnd<CR>")
   bmap("n", "<Plug>CoqJumpToError",      ":RocqJumpToError<CR>")
@@ -740,6 +762,8 @@ function M.define_mappings()
     { "ni", "Undo"             },
     { "ni", "ToLine"           },
     { "ni", "OmitToLine"       },  -- no default key in original, but alias exists
+    { "ni", "ToEnd"            },
+    { "ni", "OmitToEnd"        },
     { "ni", "ToTop"            },
     { "ni", "JumpToEnd"        },
     { "ni", "JumpToError"      },
@@ -785,6 +809,7 @@ function M.define_mappings()
     { "Next",              "j",      "ni" },
     { "Undo",              "k",      "ni" },
     { "ToLine",            "l",      "ni" },
+    { "ToEnd",             "$",      "ni" },
     { "ToTop",             "T",      "ni" },
     { "JumpToEnd",         "G",      "ni" },
     { "JumpToError",       "E",      "ni" },
