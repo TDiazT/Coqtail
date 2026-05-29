@@ -790,8 +790,12 @@ function Coqtop:do_option(cmd, in_script, opts, cb)
       err = table.concat(errs)
     end
 
-    if in_script and response:is_ok() and option_ok then
-      -- Associate the option change with a new state id by running a noop
+    if response:is_ok() and option_ok then
+      -- Associate the option change with a new state id by running a noop.
+      -- Required for both in-script and out-of-script use: without it, Rocq's
+      -- STM resets the option back to the state's saved value on the next
+      -- Add or Query call.  For in_script=false the noop advances state_id
+      -- without entering the user's rewind stack (advance skips states push).
       self:advance(self.xml.noop, in_script, opts, function(ok, _, _, _)
         assert(ok, "noop failed unexpectedly")
         cb(true, ret, nil, err)
@@ -809,6 +813,25 @@ function Coqtop:do_option(cmd, in_script, opts, cb)
       response:is_ok() and nil or response.loc,
       err
     )
+  end)
+end
+
+--- Fetch all current option states in one GetOptions call.
+-- cb(ok, list_or_nil) where list is {name, desc, val} triples.
+function Coqtop:all_options(opts, cb)
+  local timeout           = (opts or {}).timeout           or 0
+  local stderr_is_warning = (opts or {}).stderr_is_warning or false
+  async(function()
+    if not self:running() then cb(false, nil); return end
+    local go_cmd, go_xml = self.xml:get_options()
+    local response, err = self:_call(go_xml, timeout)
+    response, err = std_call(self.xml, go_cmd, response, err, stderr_is_warning)
+    _ = err
+    if response:is_ok() then
+      cb(true, response.val)
+    else
+      cb(false, nil)
+    end
   end)
 end
 

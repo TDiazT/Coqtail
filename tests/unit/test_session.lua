@@ -15,7 +15,10 @@ _G.vim = {
 }
 -- Stub coqtail.coqtop — the session module requires it at load time.
 package.preload["coqtail.coqtop"] = function()
-  return { Coqtop = {} }
+  local Coqtop = {}
+  Coqtop.__index = Coqtop
+  function Coqtop.new(_cb) return setmetatable({}, Coqtop) end
+  return { Coqtop = Coqtop }
 end
 
 -- Signal test-export mode before loading.
@@ -138,6 +141,51 @@ check("ns str",               ns({'A "B.".'},         0, 0), {0, 6})
 check("ns str dot",           ns({'Check "a.b".'},    0, 0), {0, 11})
 
 check("ns str shields comment", ns({'A "(*foo*)".'}, 0, 0), {0, 11})
+
+-- ============================================================
+-- Printing flag list tests
+-- ============================================================
+
+local flags = T.PRINTING_FLAGS
+assert(type(flags) == "table", "PRINTING_FLAGS must be a table")
+
+local function has_flag(name)
+  for _, f in ipairs(flags) do
+    if f == name then return true end
+  end
+  return false
+end
+
+check("flags contains Printing Universes",  has_flag("Printing Universes"),  true)
+check("flags contains Printing All",        has_flag("Printing All"),        true)
+check("flags contains Printing Notations",  has_flag("Printing Notations"),  true)
+check("flags contains Printing Implicit",   has_flag("Printing Implicit"),   true)
+check("flags contains Printing Coercions",  has_flag("Printing Coercions"),  true)
+
+-- ============================================================
+-- Session flag storage tests
+-- ============================================================
+
+local Session = session.Session
+local sess    = Session.create(1)
+
+check("user_flags empty on create",
+  next(sess:user_flags()) == nil, true)
+
+sess:record_flag("Printing Universes", true)
+check("record_flag stores true",
+  sess:user_flags()["Printing Universes"], true)
+
+sess:record_flag("Printing Universes", false)
+check("record_flag stores false (not nil)",
+  sess:user_flags()["Printing Universes"], false)
+
+sess:record_flag("Printing All", true)
+sess:record_flag("Printing Universes", true)
+check("record_flag tracks multiple flags independently",
+  sess:user_flags()["Printing All"], true)
+check("record_flag overwrites previous value",
+  sess:user_flags()["Printing Universes"], true)
 
 -- ============================================================
 -- Summary

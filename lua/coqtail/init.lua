@@ -433,21 +433,29 @@ function M.set_exe(path)
   end
 end
 
---- Stop Rocq and restart, restoring the previous checked position.
+--- Stop Rocq and restart, restoring the previous checked position and flags.
 function M.restart()
-  local buf  = panels.getmain()
-  local sess = get_session(buf)
-  local ep   = sess and sess:endpoint() or nil
+  local buf       = panels.getmain()
+  local sess      = get_session(buf)
+  local ep        = sess and sess:endpoint() or nil
+  local saved_flags = sess and sess:user_flags() or {}
   -- Only restore if something was actually checked (endpoint past the start).
   local restore = ep and (ep[1] > 1 or ep[2] > 0)
   M.stop()
   vim.schedule(function()
-    M.start(restore and function()
+    M.start(function()
       local new_sess = get_session(panels.getmain())
-      if new_sess then
-        new_sess:to_line(ep[1] - 1, ep[2] - 1, false, make_opts(panels.getmain()), function() end)
+      if not new_sess then return end
+      -- Restore flags first (re-applies saved_flags onto the fresh process)
+      for name, val in pairs(saved_flags) do
+        new_sess:record_flag(name, val)
       end
-    end or nil, {})
+      new_sess:_reapply_flags(make_opts(panels.getmain()), function()
+        if restore then
+          new_sess:to_line(ep[1] - 1, ep[2] - 1, false, make_opts(panels.getmain()), function() end)
+        end
+      end)
+    end, {})
   end)
 end
 
@@ -679,6 +687,50 @@ function M.define_commands()
     end
     local sess = get_session(buf)
     if sess then sess:toggle_debug() end
+  end)
+
+  -- RocqFlags / CoqFlags — interactive printing-flag checklist
+  cmd("CoqFlags", "RocqFlags", { bar = true }, function(_)
+    local sess = get_session(buf)
+    if not sess then
+      vim.notify("Rocq is not running.", vim.log.levels.WARN); return
+    end
+    local checklist = require("coqtail.checklist")
+    local opts = make_opts(buf)
+    checklist.open(
+      session.Session.PRINTING_FLAGS,
+      function(cb) sess:get_flag_states(session.Session.PRINTING_FLAGS, opts, cb) end,
+      function(name, val, cb) sess:set_flag(name, val, opts, function(ok, _) cb(ok) end) end
+    )
+  end)
+
+  -- RocqSet / CoqSet — set a Rocq option from the command line
+  local function flag_complete(arg, _cmd, _cursor)
+    local matches = {}
+    for _, name in ipairs(session.Session.PRINTING_FLAGS) do
+      if name:lower():find(arg:lower(), 1, true) then
+        matches[#matches + 1] = name
+      end
+    end
+    return matches
+  end
+
+  cmd("CoqSet", "RocqSet", { nargs = "+", complete = flag_complete }, function(a)
+    local sess = get_session(buf)
+    if not sess then
+      vim.notify("Rocq is not running.", vim.log.levels.WARN); return
+    end
+    local name = a.args
+    sess:set_flag(name, true, make_opts(buf), function() end)
+  end)
+
+  cmd("CoqUnset", "RocqUnset", { nargs = "+", complete = flag_complete }, function(a)
+    local sess = get_session(buf)
+    if not sess then
+      vim.notify("Rocq is not running.", vim.log.levels.WARN); return
+    end
+    local name = a.args
+    sess:set_flag(name, false, make_opts(buf), function() end)
   end)
 end
 

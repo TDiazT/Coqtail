@@ -26,6 +26,27 @@ end
 local NoDotError = { type = "NoDotError" }
 
 -- ============================================================
+-- Printing flag constants
+-- ============================================================
+
+-- Ordered list of boolean printing flags available in the :RocqFlags checklist.
+-- Only boolean flags; valued options (Diffs, Printing Depth) are set via :RocqSet.
+local PRINTING_FLAGS = {
+  "Printing All",
+  "Printing Coercions",
+  "Printing Existential Instances",
+  "Printing Goal Names",
+  "Printing Implicit",
+  "Printing Matching",
+  "Printing Notations",
+  "Printing Parentheses",
+  "Printing Records",
+  "Printing Synth",
+  "Printing Unfocused",
+  "Printing Universes",
+}
+
+-- ============================================================
 -- Proof pattern constants
 -- ============================================================
 
@@ -695,7 +716,8 @@ end
 -- ============================================================
 
 local Session = {}
-Session.__index = Session
+Session.__index    = Session
+Session.PRINTING_FLAGS = PRINTING_FLAGS
 
 --- Create and fully initialize a Session for buffer `buf`.
 function Session.create(buf)
@@ -711,6 +733,7 @@ function Session.create(buf)
     goal_msg      = { "No goals." },
     goal_hls      = {},
     _log          = "",
+    _user_flags   = {},   -- flags toggled by :RocqFlags/:RocqSet; re-applied on restart
     coqtop        = nil,  -- set below
   }, Session)
 
@@ -1074,7 +1097,9 @@ function Session:rewind(steps, opts, cb)
     self.omitted_proofs = new_om
     self.error_at       = nil
 
-    self:refresh(opts, true, true, false, function() cb(nil) end)
+    self:refresh(opts, true, true, false, function()
+      self:_reapply_flags(opts, function() cb(nil) end)
+    end)
   end)
 end
 
@@ -1384,6 +1409,76 @@ function Session:splash(version, width, _height, opts)
   _ = opts  -- suppress unused warning
 end
 
+--- Record the user's intent to have a printing flag on or off.
+-- This is stored so RocqRestart can re-apply flags after spawning a new process.
+function Session:record_flag(name, val)
+  self._user_flags[name] = val
+end
+
+--- Re-apply all user-toggled flags sequentially. cb() when done.
+-- Called after rewind and restart to restore flags that may have been rolled
+-- back when Rocq's STM went to a state before the anchoring noop.
+function Session:_reapply_flags(opts, cb)
+  local pairs_list = {}
+  for name, val in pairs(self._user_flags) do
+    pairs_list[#pairs_list + 1] = { name, val }
+  end
+  local function chain(i)
+    if i > #pairs_list then if cb then cb() end; return end
+    local name, val = pairs_list[i][1], pairs_list[i][2]
+    self:set_flag(name, val, opts, function() chain(i + 1) end)
+  end
+  chain(1)
+end
+
+--- Return a shallow copy of the user-toggled flags table {[name] = bool}.
+function Session:user_flags()
+  local copy = {}
+  for k, v in pairs(self._user_flags) do copy[k] = v end
+  return copy
+end
+
+--- Fetch current values for a set of named flags via one GetOptions call.
+-- cb({[name] = bool}) on success, cb(nil) if Rocq is not running or fails.
+function Session:get_flag_states(names, opts, cb)
+  if not self.coqtop:running() then cb(nil); return end
+  local name_set = {}
+  for _, n in ipairs(names) do name_set[n] = true end
+  self.coqtop:all_options(opts, function(ok, all)
+    if not ok or not all then cb(nil); return end
+    local result = {}
+    for _, item in ipairs(all) do
+      local n, val = item[1], item[3]
+      if name_set[n] then
+        result[n] = val == true
+      end
+    end
+    cb(result)
+  end)
+end
+
+--- Set a boolean printing flag via the SetOptions side-channel, record it for
+-- restart re-apply, and re-fetch goals.  cb(ok, msg) when done.
+function Session:set_flag(name, val, opts, cb)
+  if not self.coqtop:running() then
+    vim.notify("Rocq is not running.", vim.log.levels.WARN)
+    if cb then cb(false, "Rocq is not running.") end
+    return
+  end
+  local cmd = (val and "Set " or "Unset ") .. name
+  self.coqtop:do_option(cmd, false, opts, function(ok, msg, _loc, _err)
+    if ok then
+      self:record_flag(name, val)
+      self:refresh(opts, true, true, false, function()
+        if cb then cb(true, msg) end
+      end)
+    else
+      vim.notify("Failed to set flag: " .. (msg or ""), vim.log.levels.ERROR)
+      if cb then cb(false, msg) end
+    end
+  end)
+end
+
 function Session:toggle_debug(_opts)
   local log = self.coqtop:toggle_debug()
   if log == nil then
@@ -1428,6 +1523,7 @@ if _G._COQTAIL_TESTING then
     get_message_range  = get_message_range,
     NoDotError         = NoDotError,
     UnmatchedError     = UnmatchedError,
+    PRINTING_FLAGS     = PRINTING_FLAGS,
   }
 end
 

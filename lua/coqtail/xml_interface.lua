@@ -1084,11 +1084,10 @@ local function make_v85(version, str_version, coq_path, coq_prog)
       optval_xml = x_option_value("bool", true)
     end
 
-    local name_list  = x_string_list(split_words(option))
-    local pair_xml   = x_pair(name_list, optval_xml)
-    local inner_list = x_list({ pair_xml })
-    local outer_list = x_list({ inner_list })
-    return "SetOptions", make_call("SetOptions", outer_list)
+    local name_list = x_string_list(split_words(option))
+    local pair_xml  = x_pair(name_list, optval_xml)
+    local opt_list  = x_list({ pair_xml })
+    return "SetOptions", make_call("SetOptions", opt_list)
   end
 
   return iface
