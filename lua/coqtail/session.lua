@@ -584,46 +584,6 @@ local function find_opaque_proof_end(buffer, send_queue, queue_start)
 end
 
 -- ============================================================
--- Vim highlight pattern generator (mirrors Python's Matcher class)
--- ============================================================
-
---- Build a vim regex that matches a 2-D region.
--- All indices 0-indexed; stops exclusive (Python slice convention); nil = unbounded.
-local function make_match_pattern(row_s, row_e, col_s, col_e)
-  local function sh(x) return x ~= nil and x + 1 or nil end
-  local ls = sh(row_s) or 1
-  local le = sh(row_e)
-  local cs = sh(col_s) or 1
-  local ce = sh(col_e)
-
-  local function dim_int(n, t)   return ("\\%%%d%s"):format(n, t) end
-  local function dim_sl(s, e, t)
-    local p = ""
-    if s ~= nil and s > 1 then p = p .. ("\\%%>%d%s"):format(s - 1, t) end
-    if e ~= nil            then p = p .. ("\\%%<%d%s"):format(e,     t) end
-    return p
-  end
-
-  if le ~= nil and ls == le - 1 then
-    return dim_int(ls, "l") .. dim_sl(cs, ce, "c")
-  end
-
-  local parts = {}
-  local first = dim_int(ls, "l") .. dim_sl(cs, nil, "c")
-  if first ~= "" then parts[#parts + 1] = first end
-  if le ~= nil and ls + 1 < le - 1 then
-    parts[#parts + 1] = dim_sl(ls + 1, le - 1, "l")
-  end
-  if le ~= nil then
-    local last = dim_int(le - 1, "l") .. dim_sl(nil, ce, "c")
-    if last ~= "" then parts[#parts + 1] = last end
-  end
-
-  local nz = {}
-  for _, p in ipairs(parts) do if p ~= "" then nz[#nz + 1] = p end end
-  return table.concat(nz, "\\|")
-end
-
 -- ============================================================
 -- Goal display helpers
 -- ============================================================
@@ -808,12 +768,14 @@ end
 -- Highlights and panels accessors
 -- ============================================================
 
+-- highlights: {checked, sent, error} are {sr, sc, er, ec} (0-indexed, ec exclusive),
+-- omitted is a list of such ranges.
 function Session:_get_highlights()
-  local m = { checked = nil, sent = nil, error = nil, omitted = nil }
+  local m = { checked = nil, sent = nil, error = nil, omitted = {} }
 
   if #self.endpoints > 0 then
     local ep = self.endpoints[#self.endpoints]
-    m.checked = make_match_pattern(nil, ep[1] + 1, nil, ep[2])
+    m.checked = { 0, 0, ep[1], ep[2] }
   end
 
   if #self.send_queue > 0 then
@@ -822,29 +784,25 @@ function Session:_get_highlights()
       local ep = self.endpoints[#self.endpoints]
       sline, scol = ep[1], ep[2]
     else
-      sline, scol = 0, -1
+      sline, scol = 0, 0
     end
-    local lq    = self.send_queue[#self.send_queue]
-    m.sent = make_match_pattern(sline, lq.stop[1] + 1, scol, lq.stop[2])
+    local lq = self.send_queue[#self.send_queue]
+    m.sent = { sline, scol, lq.stop[1], lq.stop[2] }
   end
 
   if self.error_at ~= nil then
     local s, e = self.error_at[1], self.error_at[2]
-    m.error = make_match_pattern(s[1], e[1] + 1, s[2], e[2])
+    m.error = { s[1], s[2], e[1], e[2] }
   end
 
   if #self.omitted_proofs > 0 then
     local ranges = {}
     for _, pr in ipairs(self.omitted_proofs) do
       for _, range_ in ipairs({ pr.proof, pr.qed }) do
-        local sl, sc = range_.start[1], range_.start[2]
-        local el, ec = range_.stop[1],  range_.stop[2]
-        for l = sl, el do
-          local c        = (l == sl) and sc or 0
-          local line_str = self.buffer[l + 1] or ""
-          local span     = (l == el) and (ec - c) or (#line_str - c)
-          ranges[#ranges + 1] = { l + 1, c + 1, span }
-        end
+        ranges[#ranges + 1] = {
+          range_.start[1], range_.start[2],
+          range_.stop[1],  range_.stop[2],
+        }
       end
     end
     m.omitted = ranges

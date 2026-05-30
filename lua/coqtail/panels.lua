@@ -22,6 +22,39 @@ local HL_GROUPS = {
   { "omitted", "CoqtailOmitted" },
 }
 
+-- Extmark namespaces (buffer-scoped, compatible with tree-sitter).
+local NS        = vim.api.nvim_create_namespace("coqtail")
+local NS_RICHPP = vim.api.nvim_create_namespace("coqtail_richpp")
+
+-- Define Coqtail highlight groups. Uses `default = true` so user overrides
+-- (e.g. via colorscheme or explicit `hi CoqtailChecked`) take precedence.
+-- Must run at module load AND after any ColorScheme event (which calls hi clear).
+local function define_highlights()
+  local dark = vim.o.background == "dark"
+  vim.api.nvim_set_hl(0, "CoqtailChecked", {
+    default = true,
+    ctermbg = dark and 17  or 157,
+    bg      = dark and "#113311" or "LightGreen",
+  })
+  vim.api.nvim_set_hl(0, "CoqtailSent", {
+    default = true,
+    ctermbg = dark and 60  or 40,
+    bg      = dark and "#007630" or "LimeGreen",
+  })
+  vim.api.nvim_set_hl(0, "CoqtailError",          { default = true, link = "Error"      })
+  vim.api.nvim_set_hl(0, "CoqtailOmitted",         { default = true, link = "coqProofAdmit" })
+  vim.api.nvim_set_hl(0, "CoqtailDiffAdded",       { default = true, link = "DiffText"   })
+  vim.api.nvim_set_hl(0, "CoqtailDiffAddedBg",     { default = true, link = "DiffChange" })
+  vim.api.nvim_set_hl(0, "CoqtailDiffRemoved",     { default = true, link = "DiffDelete" })
+  vim.api.nvim_set_hl(0, "CoqtailDiffRemovedBg",   { default = true, link = "DiffDelete" })
+end
+
+define_highlights()
+vim.api.nvim_create_autocmd("ColorScheme", {
+  group    = vim.api.nvim_create_augroup("CoqtailHighlightLua", { clear = true }),
+  callback = define_highlights,
+})
+
 -- Highlight groups for richpp (tagged token) spans.
 local RICHPP_HL_GROUPS = {
   ["diff.added"]      = "CoqtailDiffAdded",
@@ -83,79 +116,39 @@ local function get_cur_panel(buf)
 end
 
 -- ============================================================
--- Per-window highlight helpers
--- ============================================================
-
-local function get_win_hl(winid)
-  local ok, v = pcall(vim.api.nvim_win_get_var, winid, "coqtail_highlights")
-  return ok and v or nil
-end
-
-local function set_win_hl(winid, t)
-  vim.api.nvim_win_set_var(winid, "coqtail_highlights", t)
-end
-
-local function del_win_hl(winid)
-  pcall(vim.api.nvim_win_del_var, winid, "coqtail_highlights")
-end
-
--- ============================================================
 -- Highlighting
 -- ============================================================
 
---- Clear all Coqtail match highlights in the given window.
-local function clearhl(winid)
-  local hl = get_win_hl(winid)
-  if not hl then return end
-  for _, grp in ipairs(HL_GROUPS) do
-    local ids = hl[grp[1]] or {}
-    for _, mid in ipairs(ids) do
-      pcall(vim.api.nvim_win_call, winid, function()
-        pcall(vim.fn.matchdelete, mid)
-      end)
-    end
-  end
-  del_win_hl(winid)
+--- Clear all Coqtail region highlights from `buf`.
+local function clearhl(buf)
+  vim.api.nvim_buf_clear_namespace(buf, NS, 0, -1)
 end
 
---- Update match highlights in `winid` for the given buffer `buf`.
-local function updatehl(winid, buf, highlights)
-  clearhl(winid)
-  local hl = { buf = buf }
+--- Set a single extmark range on `buf` if the range is valid.
+local function set_range(buf, grp, range)
+  if not range then return end
+  pcall(vim.api.nvim_buf_set_extmark, buf, NS, range[1], range[2], {
+    end_row   = range[3],
+    end_col   = range[4],
+    hl_group  = grp,
+    priority  = 90,
+  })
+end
+
+--- Update region highlights on `buf` from coordinate ranges.
+-- highlights: {checked, sent, error} = {sr,sc,er,ec}; omitted = list of same.
+local function updatehl(buf, highlights)
+  clearhl(buf)
   for _, entry in ipairs(HL_GROUPS) do
     local var, grp = entry[1], entry[2]
-    local pat = highlights[var]
-    if type(pat) == "string" then
-      -- vim regex pattern → matchadd
-      local ids = {}
-      vim.api.nvim_win_call(winid, function()
-        local ok, mid = pcall(vim.fn.matchadd, grp, pat, -10)
-        if ok then ids = { mid } end
-      end)
-      hl[var] = ids
-    elseif type(pat) == "table" then
-      -- list of {line, col, span} → matchaddpos one-by-one
-      local ids = {}
-      vim.api.nvim_win_call(winid, function()
-        for _, pos in ipairs(pat) do
-          local ok, mid = pcall(vim.fn.matchaddpos, grp, { pos }, -10)
-          if ok then ids[#ids + 1] = mid end
-        end
-      end)
-      hl[var] = ids
-    else
-      hl[var] = {}
+    local r = highlights[var]
+    if type(r) == "table" then
+      if type(r[1]) == "number" then
+        set_range(buf, grp, r)
+      else
+        for _, range in ipairs(r) do set_range(buf, grp, range) end
+      end
     end
-  end
-  set_win_hl(winid, hl)
-end
-
---- Re-apply saved highlights when a window re-displays a buffer.
-function M.cleanuphl()
-  local cur = vim.api.nvim_get_current_win()
-  local hl  = get_win_hl(cur)
-  if hl and hl.buf ~= vim.api.nvim_win_get_buf(cur) then
-    clearhl(cur)
   end
 end
 
@@ -181,14 +174,6 @@ end
 -- richpp: list of {line_no, col, span, hlgroup}
 -- scroll: whether to scroll
 local function replace(panel, txt, richpp, scroll)
-  -- Remove previous richpp highlights
-  local prev = (function()
-    local ok, v = pcall(vim.api.nvim_buf_get_var, vim.api.nvim_get_current_buf(),
-                        "coqtail_panel_richpp")
-    return ok and v or {}
-  end)()
-  for _, mid in ipairs(prev) do pcall(vim.fn.matchdelete, mid) end
-
   -- Save view
   local view = vim.fn.winsaveview()
 
@@ -203,17 +188,19 @@ local function replace(panel, txt, richpp, scroll)
     vim.api.nvim_buf_set_option(pbuf, "modifiable", false)
   end
 
-  -- Apply richpp highlights
-  local matches = {}
+  -- Apply richpp highlights (replaces previous ones via namespace clear).
+  vim.api.nvim_buf_clear_namespace(pbuf, NS_RICHPP, 0, -1)
   for _, h in ipairs(richpp) do
     local line_no, col, span, tag = h[1], h[2], h[3], h[4]
     local hlg = RICHPP_HL_GROUPS[tag]
     if hlg then
-      local ok, mid = pcall(vim.fn.matchaddpos, hlg, { { line_no, col, span } }, -10)
-      if ok then matches[#matches + 1] = mid end
+      pcall(vim.api.nvim_buf_set_extmark, pbuf, NS_RICHPP, line_no - 1, col - 1, {
+        end_col  = col - 1 + span,
+        hl_group = hlg,
+        priority = 90,
+      })
     end
   end
-  vim.api.nvim_buf_set_var(pbuf, "coqtail_panel_richpp", matches)
 
   -- Restore view (or scroll)
   local scroll_cfg = (vim.g.coqtail_panel_scroll or default_scroll())
@@ -336,9 +323,8 @@ local function init_panel(name)
   -- Set filetype: "coq-goals" or "coq-infos"
   vim.api.nvim_buf_set_option(pbuf, "filetype",  "coq-" .. name .. "s")
 
-  vim.api.nvim_buf_set_var(pbuf, "coqtail_panel_open",  true)
-  vim.api.nvim_buf_set_var(pbuf, "coqtail_panel_size",  { -1, -1 })
-  vim.api.nvim_buf_set_var(pbuf, "coqtail_panel_richpp",{})
+  vim.api.nvim_buf_set_var(pbuf, "coqtail_panel_open", true)
+  vim.api.nvim_buf_set_var(pbuf, "coqtail_panel_size", { -1, -1 })
 
   return pbuf
 end
@@ -356,23 +342,6 @@ function M.init()
   for _, pbuf in pairs(panel_bufs) do
     set_panel_bufs(pbuf, panel_bufs)
   end
-
-  -- Re-apply highlights when the main buffer enters a new window
-  vim.api.nvim_create_autocmd("BufEnter", {
-    buffer  = main_buf,
-    desc    = "Coqtail: recall highlights on window enter",
-    callback = function()
-      local cur = vim.api.nvim_get_current_win()
-      local whl = get_win_hl(cur)
-      if not whl then
-        -- Try to restore from buffer-saved highlights
-        local ok, saved = pcall(vim.api.nvim_buf_get_var, main_buf, "coqtail_highlights")
-        if ok and saved then
-          updatehl(cur, main_buf, saved)
-        end
-      end
-    end,
-  })
 
   counter = counter + 1
 end
@@ -396,13 +365,7 @@ function M.refresh(buf, highlights, panels_data, scroll)
   local ok2, err = pcall(function()
     vim.api.nvim_buf_set_var(buf, "coqtail_refreshing", true)
 
-    -- Save highlights on the buffer (for window re-entry)
-    vim.api.nvim_buf_set_var(buf, "coqtail_highlights", highlights)
-
-    -- Update match highlights in every window showing buf
-    for _, winid in ipairs(winids) do
-      updatehl(winid, buf, highlights)
-    end
+    updatehl(buf, highlights)
 
     -- Update panel text
     local panel_bufs = get_panel_bufs(buf)
@@ -440,10 +403,7 @@ function M.hide()
   local buf = vim.api.nvim_get_current_buf()
   if M.switch(M.MAIN) == M.NONE then return end
 
-  -- Clear highlights in all windows showing main buf
-  for _, winid in ipairs(vim.fn.win_findbuf(buf)) do
-    clearhl(winid)
-  end
+  clearhl(buf)
 
   -- Hide aux panels
   local panel_bufs = get_panel_bufs(buf)
@@ -455,7 +415,6 @@ function M.hide()
       winid ~= -1)
     vim.api.nvim_buf_set_var(pbuf, "coqtail_panel_size",
       { vim.fn.winwidth(winid), vim.fn.winheight(winid) })
-    vim.api.nvim_buf_set_var(pbuf, "coqtail_panel_richpp", {})
     if winid ~= -1 then
       vim.api.nvim_win_close(winid, false)
     end
@@ -472,11 +431,7 @@ function M.cleanup(buf)
     end
   end
   pcall(vim.api.nvim_buf_del_var, buf, "coqtail_panel_bufs")
-  pcall(vim.api.nvim_buf_del_var, buf, "coqtail_highlights")
-
-  for _, winid in ipairs(vim.fn.win_findbuf(buf)) do
-    clearhl(winid)
-  end
+  clearhl(buf)
 end
 
 -- ============================================================

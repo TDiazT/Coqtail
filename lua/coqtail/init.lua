@@ -966,11 +966,6 @@ function M.register()
     end,
   })
 
-  -- Clear highlights when a window switches away from this buffer.
-  vim.api.nvim_create_autocmd("BufEnter", {
-    group = vim.api.nvim_create_augroup("CoqtailCleanupHl", { clear = false }),
-    callback = function() panels.cleanuphl() end,
-  })
 end
 
 return M
