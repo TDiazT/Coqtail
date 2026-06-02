@@ -131,7 +131,8 @@ local function set_range(buf, grp, range)
     end_row   = range[3],
     end_col   = range[4],
     hl_group  = grp,
-    priority  = 90,
+    priority  = 50,
+    hl_mode   = "combine",
   })
 end
 
