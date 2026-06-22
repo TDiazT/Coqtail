@@ -891,30 +891,33 @@ function Session:_pp_goals_async(goals, opts, cb)
     end
 
     if next_goal ~= nil then
-      -- Need bullet hint: async query
-      self:_do_query("Show.", opts, function(ok, show, _)
-        local bullet = nil
-        if ok then
-          bullet = show:match("bullet ([-+*}]+)") or
-                   show:match('unfocusing with "([-+*}]+)"')
-        end
-
-        local binfo = ""
-        if bullet == "}" then
-          binfo = "end this goal with '}'"
-        elseif bullet then
-          binfo = "use bullet '" .. bullet .. "'"
-        end
-
+      -- The bullet hint needs an extra `Show.` round-trip, which is best-effort:
+      -- it must never block (or fail) the goal panel.  Render with whatever hint
+      -- we can get; on any failure/timeout, render the next goal without it.
+      local function render_next(binfo)
         local ni = "Next goal"
-        if next_goal.name then ni = ni .. " [" .. next_goal.name .. "]" end
-        if binfo ~= ""    then ni = ni .. " (" .. binfo .. ")"          end
+        if next_goal.name      then ni = ni .. " [" .. next_goal.name .. "]" end
+        if binfo and binfo ~= "" then ni = ni .. " (" .. binfo .. ")"        end
         ni = ni .. ":"
 
         lines[#lines + 1] = ni
         lines[#lines + 1] = ""
         add_content(next_goal.ccl)
         cb({ lines, highlights })
+      end
+
+      self:_do_query("Show.", opts, function(ok, show, _)
+        local binfo = ""
+        if ok and type(show) == "string" then
+          local bullet = show:match("bullet ([-+*}]+)") or
+                         show:match('unfocusing with "([-+*}]+)"')
+          if bullet == "}" then
+            binfo = "end this goal with '}'"
+          elseif bullet then
+            binfo = "use bullet '" .. bullet .. "'"
+          end
+        end
+        render_next(binfo)
       end)
     else
       lines[#lines + 1] = "All goals completed."

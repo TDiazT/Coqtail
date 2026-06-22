@@ -27,6 +27,20 @@ local function async(fn)
   coroutine.wrap(fn)()
 end
 
+-- Auxiliary calls (queries, goal fetches, option toggles) are not part of
+-- advancing the proof and must never hang the UI: a single stuck response
+-- would orphan the _pending coroutine and freeze the goal panel.  When the
+-- user has not configured a positive timeout, bound them so a stuck response
+-- degrades to an error instead of blocking the refresh forever.  Add/init are
+-- intentionally left unbounded (heavy proof steps can legitimately take long).
+local DEFAULT_AUX_TIMEOUT = 30  -- seconds
+
+local function aux_timeout(opts)
+  local t = opts.timeout
+  if t and t > 0 then return t end
+  return DEFAULT_AUX_TIMEOUT
+end
+
 -- ============================================================
 -- Coqtop
 -- ============================================================
@@ -575,7 +589,7 @@ end
 -- cb(ok, msg, loc_or_nil, err_str)
 function Coqtop:query(cmd, in_script, opts, cb)
   opts = opts or {}
-  local timeout           = opts.timeout           or 0
+  local timeout           = aux_timeout(opts)
   local stderr_is_warning = opts.stderr_is_warning or false
 
   async(function()
@@ -620,7 +634,7 @@ function Coqtop:goals(opts, cb)
 end
 
 function Coqtop:_goal(opts, cb)
-  local timeout           = opts.timeout           or 0
+  local timeout           = aux_timeout(opts)
   local stderr_is_warning = opts.stderr_is_warning or false
 
   async(function()
@@ -643,7 +657,7 @@ function Coqtop:_goal(opts, cb)
 end
 
 function Coqtop:_subgoals(opts, cb)
-  local timeout           = opts.timeout           or 0
+  local timeout           = aux_timeout(opts)
   local stderr_is_warning = opts.stderr_is_warning or false
 
   async(function()
@@ -714,7 +728,7 @@ end
 -- cb(ok, msg, loc_or_nil, err_str)
 function Coqtop:do_option(cmd, in_script, opts, cb)
   opts = opts or {}
-  local timeout           = opts.timeout           or 0
+  local timeout           = aux_timeout(opts)
   local stderr_is_warning = opts.stderr_is_warning or false
 
   -- Options that Rocq expects to be set via SetOptions (not Add)
@@ -791,13 +805,27 @@ function Coqtop:do_option(cmd, in_script, opts, cb)
     end
 
     if response:is_ok() and option_ok then
+      -- A GET (Test) does not change any option, so there is nothing to anchor:
+      -- skip the noop entirely.  This also avoids running `Check Prop.` (which is
+      -- not sort-neutral under the exceptional-sorts extension and can fail) on
+      -- every goal refresh, since diff suppression issues a `Test Diffs` GET.
+      if vals == nil then
+        cb(true, ret, nil, err)
+        return
+      end
+
       -- Associate the option change with a new state id by running a noop.
       -- Required for both in-script and out-of-script use: without it, Rocq's
       -- STM resets the option back to the state's saved value on the next
       -- Add or Query call.  For in_script=false the noop advances state_id
       -- without entering the user's rewind stack (advance skips states push).
-      self:advance(self.xml.noop, in_script, opts, function(ok, _, _, _)
-        assert(ok, "noop failed unexpectedly")
+      --
+      -- The noop is best-effort: in some proof states (e.g. right after a
+      -- bullet's goal is closed) `Check Prop.` fails its Status, and advance()
+      -- rewinds it.  This MUST NOT throw — an error here kills the surrounding
+      -- coroutine, orphans `cb`, and hangs the goal refresh forever (the option
+      -- itself already succeeded, so we still report success).
+      self:advance(self.xml.noop, in_script, opts, function(_ok, _msg, _, _)
         cb(true, ret, nil, err)
       end)
       return
